@@ -1,3 +1,6 @@
+pub mod kinesis;
+pub mod lease;
+
 #[cfg(test)]
 mod tests {
     #[test]
