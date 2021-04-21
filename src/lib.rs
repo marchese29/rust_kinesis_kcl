@@ -63,10 +63,14 @@ impl WorkerScheduler {
 
         let mut last_loop_time = Instant::now();
         while !self.should_shutdown.load(Ordering::SeqCst) {
-            self.run_once().await;
+            let mut killed = false;
+            tokio::select! {
+                _ = self.shutdown_signal.notified() => { killed = true; }
+                _ = self.run_once() => {}
+            }
 
             // Limit our polling frequency
-            if Instant::now() - last_loop_time < Duration::from_secs(10) {
+            if !killed && Instant::now() - last_loop_time < Duration::from_secs(10) {
                 // Delay until next cycle, or until we get the signal to shutdown
                 tokio::select! {
                     _ = self.shutdown_signal.notified() => {}
