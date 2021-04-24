@@ -1,58 +1,41 @@
-use std::sync::{
-    atomic::{AtomicBool, Ordering},
-    Arc,
-};
+use std::{collections::HashSet, sync::Arc};
+use tokio::join;
 
-use tokio::sync::{Notify, RwLock};
+use super::{renewer::LeaseRenewer, taker::LeaseTaker, ShardInfo};
+use crate::util::{RunAtFixedInterval, RunWithFixedDelay};
 
-use super::Lease;
-
-pub(crate) struct LeaseTaker {
-    renewer: Arc<LeaseRenewer>,
-    should_shutdown: AtomicBool,
-    shutdown: Notify,
+pub(crate) struct LeaseManager {
+    initialized: bool,
+    lease_taker: Arc<LeaseTaker>,
+    lease_renewer: Arc<LeaseRenewer>,
 }
 
-impl LeaseTaker {
-    fn new(renewer: Arc<LeaseRenewer>) -> Self {
-        Self {
-            renewer: renewer.clone(),
-            should_shutdown: AtomicBool::new(false),
-            shutdown: Notify::new(),
-        }
+impl LeaseManager {
+    pub(crate) fn new() -> Self {
+        todo!()
     }
 
-    pub(crate) async fn run(&self) {
+    pub(crate) fn initialize(&self) {
+        todo!()
+    }
+
+    pub(crate) fn start(self: Arc<Self>) {
+        assert!(
+            self.initialized,
+            "Attempted to start lease manager before initializing"
+        );
+        let this = self.clone();
+        tokio::spawn(async move { this.lease_taker.run().await });
+
+        let this = self.clone();
+        tokio::spawn(async move { this.lease_renewer.run().await });
+    }
+
+    pub(crate) async fn get_owned_leases(&self) -> HashSet<ShardInfo> {
         todo!()
     }
 
     pub(crate) async fn shutdown(&self) {
-        self.should_shutdown.store(true, Ordering::SeqCst);
-        self.shutdown.notified().await;
-    }
-}
-
-pub(crate) struct LeaseRenewer {
-    leases: RwLock<Vec<Arc<Lease>>>,
-    should_shutdown: AtomicBool,
-    shutdown: Notify,
-}
-
-impl LeaseRenewer {
-    fn new() -> Self {
-        Self {
-            leases: RwLock::new(Vec::new()),
-            should_shutdown: AtomicBool::new(false),
-            shutdown: Notify::new(),
-        }
-    }
-
-    pub(crate) async fn run(&self) {
-        todo!()
-    }
-
-    pub(crate) async fn shutdown(&self) {
-        self.should_shutdown.store(true, Ordering::SeqCst);
-        self.shutdown.notified().await;
+        join!(self.lease_taker.shutdown(), self.lease_renewer.shutdown());
     }
 }
