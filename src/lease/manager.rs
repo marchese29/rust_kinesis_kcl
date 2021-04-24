@@ -1,13 +1,18 @@
 use std::{collections::HashSet, sync::Arc};
-use tokio::join;
+use std::{
+    sync::atomic::{AtomicBool, Ordering},
+    time::Duration,
+};
+use tokio::sync::Notify;
 
 use super::{renewer::LeaseRenewer, taker::LeaseTaker, ShardInfo};
-use crate::util::{RunAtFixedInterval, RunWithFixedDelay};
+use crate::util::runnable::{run_at_fixed_interval, run_with_fixed_delay};
 
 pub(crate) struct LeaseManager {
-    initialized: bool,
+    initialized: AtomicBool,
     lease_taker: Arc<LeaseTaker>,
     lease_renewer: Arc<LeaseRenewer>,
+    shutdown: Arc<Notify>,
 }
 
 impl LeaseManager {
@@ -16,19 +21,25 @@ impl LeaseManager {
     }
 
     pub(crate) fn initialize(&self) {
+        self.initialized.store(true, Ordering::SeqCst);
         todo!()
     }
 
-    pub(crate) fn start(self: Arc<Self>) {
+    pub(crate) fn start(&self) {
         assert!(
-            self.initialized,
+            self.initialized.load(Ordering::SeqCst),
             "Attempted to start lease manager before initializing"
         );
-        let this = self.clone();
-        tokio::spawn(async move { this.lease_taker.run().await });
-
-        let this = self.clone();
-        tokio::spawn(async move { this.lease_renewer.run().await });
+        tokio::spawn(run_with_fixed_delay(
+            self.lease_taker.clone(),
+            Duration::from_secs(10),
+            self.shutdown.clone(),
+        ));
+        tokio::spawn(run_at_fixed_interval(
+            self.lease_renewer.clone(),
+            Duration::from_secs(10),
+            self.shutdown.clone(),
+        ));
     }
 
     pub(crate) async fn get_owned_leases(&self) -> HashSet<ShardInfo> {
@@ -36,6 +47,6 @@ impl LeaseManager {
     }
 
     pub(crate) async fn shutdown(&self) {
-        join!(self.lease_taker.shutdown(), self.lease_renewer.shutdown());
+        self.shutdown.notified().await;
     }
 }

@@ -2,19 +2,16 @@ use async_trait::async_trait;
 use rusoto_kinesis::KinesisClient;
 use std::{
     collections::{HashMap, HashSet},
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc,
-    },
+    sync::Arc,
     time::Duration,
 };
 use tokio::sync::Mutex;
-use util::RunAtFixedInterval;
+use util::runnable::{run_at_fixed_interval, PeriodicRunnable};
 
 use interface::processor::RecordProcessor;
 use lease::{manager::LeaseManager, ShardInfo};
 use rusoto_core::region::Region;
-use tokio::{join, sync::Notify};
+use tokio::sync::Notify;
 use worker::ShardWorker;
 
 pub mod interface;
@@ -36,9 +33,7 @@ pub struct WorkerScheduler {
 
     kinesis: Arc<KinesisClient>,
 
-    should_shutdown: AtomicBool,
-    shutdown_signal: Notify,
-    shutdown_notifier: Notify,
+    shutdown: Arc<Notify>,
 }
 
 impl WorkerScheduler {
@@ -49,16 +44,29 @@ impl WorkerScheduler {
             lease_manager: Arc::new(LeaseManager::new()),
             consumers: Mutex::new(HashMap::new()),
             kinesis: Arc::new(KinesisClient::new(Region::UsEast1)),
-            should_shutdown: AtomicBool::new(false),
-            shutdown_signal: Notify::new(),
-            shutdown_notifier: Notify::new(),
+            shutdown: Arc::new(Notify::new()),
         }
     }
 
     /// TODO
     pub fn initialize(&self) {
         self.lease_manager.initialize();
-        self.lease_manager.clone().start();
+    }
+
+    /// TODO
+    pub fn start(self: Arc<Self>) {
+        self.lease_manager.start();
+        tokio::spawn(run_at_fixed_interval(
+            self.clone(),
+            Duration::from_secs(10),
+            self.shutdown.clone(),
+        ));
+    }
+
+    /// TODO
+    pub async fn shutdown(&self) {
+        self.shutdown.notify_waiters();
+        self.shutdown.notified().await;
     }
 
     async fn shutdown_all_consumers(&self) {
@@ -71,34 +79,10 @@ impl WorkerScheduler {
         futures::future::join_all(handles).await;
         consumers.clear();
     }
-
-    /// TODO
-    pub async fn shutdown(&self) {
-        self.should_shutdown.store(true, Ordering::SeqCst);
-        self.shutdown_signal.notify_waiters();
-        self.shutdown_notifier.notified().await;
-    }
 }
 
 #[async_trait]
-impl RunAtFixedInterval for WorkerScheduler {
-    fn should_shutdown(&self) -> bool {
-        self.should_shutdown.load(Ordering::SeqCst)
-    }
-
-    async fn await_shutdown_signal(&self) {
-        self.shutdown_signal.notified().await;
-    }
-
-    async fn before_shutdown_complete(&self) {
-        self.shutdown_all_consumers().await;
-        join!(self.lease_manager.shutdown());
-    }
-
-    fn notify_shutdown_complete(&self) {
-        self.shutdown_notifier.notify_waiters();
-    }
-
+impl PeriodicRunnable for WorkerScheduler {
     async fn run_once(&self) {
         let mut assigned_shards = HashSet::<ShardInfo>::new();
         {
@@ -151,7 +135,8 @@ impl RunAtFixedInterval for WorkerScheduler {
         // Step 3: TODO: Leader stuff
     }
 
-    fn get_interval(&self) -> Duration {
-        todo!()
+    async fn before_shutdown_complete(&self) {
+        self.shutdown_all_consumers().await;
+        self.lease_manager.shutdown().await;
     }
 }

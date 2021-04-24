@@ -1,64 +1,30 @@
 use async_trait::async_trait;
-use std::{
-    collections::HashMap,
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc,
-    },
-    time::Duration,
-};
+use std::{collections::HashMap, sync::Arc, time::Duration};
 
-use tokio::sync::{Mutex, Notify, RwLock};
+use tokio::sync::{Mutex, RwLock};
 
-use crate::util::RunAtFixedInterval;
+use crate::util::runnable::PeriodicRunnable;
 
 use super::Lease;
 
 pub(crate) struct LeaseRenewer {
     leases: RwLock<HashMap<String, Arc<Lease>>>,
-    run_interval: Duration,
-
-    should_shutdown: AtomicBool,
-    shutdown: Notify,
-    shutdown_signal: Notify,
 }
 
 impl LeaseRenewer {
     fn new(run_interval: Duration) -> Self {
         Self {
             leases: RwLock::new(HashMap::new()),
-            run_interval,
-            should_shutdown: AtomicBool::new(false),
-            shutdown: Notify::new(),
-            shutdown_signal: Notify::new(),
         }
     }
 
     async fn renew_lease(&self, lease: Arc<Lease>) -> bool {
         todo!()
     }
-
-    pub(crate) async fn shutdown(&self) {
-        self.should_shutdown.store(true, Ordering::SeqCst);
-        self.shutdown_signal.notify_waiters();
-        self.shutdown.notified().await;
-    }
 }
 
 #[async_trait]
-impl RunAtFixedInterval for LeaseRenewer {
-    fn should_shutdown(&self) -> bool {
-        self.should_shutdown.load(Ordering::SeqCst)
-    }
-
-    async fn await_shutdown_signal(&self) {
-        self.shutdown_signal.notified().await;
-    }
-
-    fn notify_shutdown_complete(&self) {
-        self.shutdown.notify_waiters();
-    }
-
+impl PeriodicRunnable for LeaseRenewer {
     async fn run_once(&self) {
         // Step 1: Configure a renewer for each lease, grab a handle and keep track of expirations
         let expired_leases = Arc::new(Mutex::new(Vec::new()));
@@ -78,9 +44,5 @@ impl RunAtFixedInterval for LeaseRenewer {
                 leases_guard.remove(expired_lease);
             }
         }
-    }
-
-    fn get_interval(&self) -> Duration {
-        self.run_interval
     }
 }
