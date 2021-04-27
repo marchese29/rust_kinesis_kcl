@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use std::{collections::HashMap, sync::Arc, time::Duration};
+use std::{collections::HashMap, sync::Arc};
 
 use tokio::sync::{Mutex, RwLock};
 
@@ -12,9 +12,16 @@ pub(crate) struct LeaseRenewer {
 }
 
 impl LeaseRenewer {
-    fn new(run_interval: Duration) -> Self {
+    fn new() -> Self {
         Self {
             leases: RwLock::new(HashMap::new()),
+        }
+    }
+
+    pub(crate) async fn add_leases(&self, leases: Vec<Arc<Lease>>) {
+        let mut leases_guard = self.leases.write().await;
+        for lease in leases {
+            leases_guard.insert(lease.lease_key.clone(), lease.clone());
         }
     }
 

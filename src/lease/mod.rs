@@ -1,22 +1,42 @@
 use dynomite::Item;
-use rusoto_kinesis::Shard;
+use tokio::sync::RwLock;
 
+mod fetcher;
 pub(crate) mod manager;
 mod renewer;
 mod shard;
 mod taker;
 
-#[derive(Item)]
+struct MutableLeaseComponents {
+    last_renewal_nanos: u64,
+    lease_counter: u64,
+}
+
 pub(crate) struct Lease {
-    #[dynomite(partition_key)]
     pub(crate) lease_key: String,
+    pub(crate) lease_owner: Option<String>,
+    mutable_components: RwLock<MutableLeaseComponents>,
 }
 
 impl Lease {
-    fn for_shard(shard: &Shard) -> Self {
-        Self {
-            lease_key: shard.shard_id.clone(),
-        }
+    pub(crate) async fn get_last_renewal_nanos(&self) -> u64 {
+        let inner = self.mutable_components.read().await;
+        inner.last_renewal_nanos
+    }
+
+    pub(crate) async fn set_last_renewal_nanos(&self, last_renewal_nanos: u64) {
+        let mut inner = self.mutable_components.write().await;
+        inner.last_renewal_nanos = last_renewal_nanos;
+    }
+
+    pub(crate) async fn get_lease_counter(&self) -> u64 {
+        let inner = self.mutable_components.read().await;
+        inner.lease_counter
+    }
+
+    pub(crate) async fn set_lease_counter(&self, lease_counter: u64) {
+        let mut inner = self.mutable_components.write().await;
+        inner.lease_counter = lease_counter;
     }
 }
 

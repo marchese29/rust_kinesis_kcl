@@ -47,6 +47,7 @@ impl LeaseManager {
     }
 
     pub(crate) async fn shutdown(&self) {
+        self.shutdown.notify_waiters();
         self.shutdown.notified().await;
     }
 }
