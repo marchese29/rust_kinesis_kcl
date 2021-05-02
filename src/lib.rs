@@ -22,17 +22,10 @@ mod worker;
 
 /// TODO
 pub struct WorkerScheduler {
-    // Client-provided: generates new RecordProcessor instances
     processor_factory: fn() -> Box<dyn RecordProcessor>,
-
-    // Bookkeeping processes (not visible to clients)
     lease_manager: Arc<LeaseManager>,
-
-    // Represents current worker state
     consumers: Mutex<HashMap<ShardInfo, Arc<ShardWorker>>>,
-
     kinesis: Arc<KinesisClient>,
-
     shutdown: Arc<Notify>,
 }
 
@@ -54,13 +47,9 @@ impl WorkerScheduler {
     }
 
     /// TODO
-    pub fn start(self: Arc<Self>) {
+    pub async fn run(self: Arc<Self>) {
         self.lease_manager.start();
-        tokio::spawn(run_at_fixed_interval(
-            self.clone(),
-            Duration::from_secs(10),
-            self.shutdown.clone(),
-        ));
+        run_at_fixed_interval(self.clone(), Duration::from_secs(10), self.shutdown.clone()).await;
     }
 
     /// TODO
@@ -84,6 +73,7 @@ impl WorkerScheduler {
 #[async_trait]
 impl PeriodicRunnable for WorkerScheduler {
     async fn run_once(&self) {
+        // Step 1: Launch consumers if we need to
         let mut assigned_shards = HashSet::<ShardInfo>::new();
         {
             let mut consumers_guard = self.consumers.lock().await;
