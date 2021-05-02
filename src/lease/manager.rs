@@ -22,7 +22,7 @@ impl LeaseManager {
 
     pub(crate) fn initialize(&self) {
         self.initialized.store(true, Ordering::SeqCst);
-        todo!()
+        // TODO
     }
 
     pub(crate) fn start(&self) {

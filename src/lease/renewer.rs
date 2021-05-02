@@ -1,55 +1,55 @@
 use async_trait::async_trait;
 use std::{collections::HashMap, sync::Arc};
 
-use tokio::sync::{Mutex, RwLock};
+use tokio::sync::RwLock;
 
 use crate::util::runnable::PeriodicRunnable;
 
-use super::Lease;
+use super::{broker::LeaseBroker, SharedLease};
 
 pub(crate) struct LeaseRenewer {
-    leases: RwLock<HashMap<String, Arc<Lease>>>,
+    leases: RwLock<HashMap<String, SharedLease>>,
+    lease_broker: Arc<LeaseBroker>,
 }
 
 impl LeaseRenewer {
-    fn new() -> Self {
-        Self {
-            leases: RwLock::new(HashMap::new()),
-        }
-    }
-
-    pub(crate) async fn add_leases(&self, leases: Vec<Arc<Lease>>) {
+    pub(crate) async fn add_leases(&self, leases: Vec<SharedLease>) {
         let mut leases_guard = self.leases.write().await;
         for lease in leases {
-            leases_guard.insert(lease.lease_key.clone(), lease.clone());
+            let l = lease.read().await;
+            leases_guard.insert(l.lease_key.clone(), lease.clone());
         }
     }
 
-    async fn renew_lease(&self, lease: Arc<Lease>) -> bool {
-        todo!()
+    async fn renew_lease(&self, lease: SharedLease) -> bool {
+        let mut renewed_lease = false;
+        let lease_guard = lease.read().await;
+        if !lease_guard.is_expired() {
+            drop(lease_guard); // The broker might need the lock
+            renewed_lease = self.lease_broker.renew_lease(lease.clone()).await;
+        }
+        renewed_lease
     }
 }
 
 #[async_trait]
 impl PeriodicRunnable for LeaseRenewer {
     async fn run_once(&self) {
-        // Step 1: Configure a renewer for each lease, grab a handle and keep track of expirations
-        let expired_leases = Arc::new(Mutex::new(Vec::new()));
+        // Step 1: Try renewing leases, note any that are expired
+        let mut expired_leases = Vec::new();
         {
             let leases_guard = self.leases.read().await;
-            for (lease_key, lease) in leases_guard.iter() {
-                if !self.renew_lease(lease.clone()).await {
-                    expired_leases.lock().await.push(lease_key.clone());
+            for (lease_key, shared_lease) in leases_guard.iter() {
+                if !self.renew_lease(shared_lease.clone()).await {
+                    expired_leases.push(lease_key.clone());
                 }
             }
         }
 
         // Step 2: Remove the expired leases from our renewal pool
-        {
-            let mut leases_guard = self.leases.write().await;
-            for expired_lease in expired_leases.lock().await.iter() {
-                leases_guard.remove(expired_lease);
-            }
+        let mut leases_guard = self.leases.write().await;
+        for expired_lease in expired_leases.iter() {
+            leases_guard.remove(expired_lease);
         }
     }
 }
