@@ -27,9 +27,3 @@ impl Lease {
 pub(crate) struct ShardInfo {
     pub(crate) shard_id: String,
 }
-
-impl ShardInfo {
-    fn from_lease(_lease: &Lease) -> Self {
-        todo!()
-    }
-}

@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use super::SharedLease;
 
 pub(crate) struct LeaseBroker {}
@@ -9,11 +7,11 @@ impl LeaseBroker {
         todo!()
     }
 
-    pub(crate) async fn take_lease(&self, lease: SharedLease, worker: &str) -> bool {
+    pub(crate) async fn take_lease(&self, _lease: SharedLease, _worker: &str) -> bool {
         todo!()
     }
 
-    pub(crate) async fn renew_lease(&self, lease: SharedLease) -> bool {
+    pub(crate) async fn renew_lease(&self, _lease: SharedLease) -> bool {
         todo!()
     }
 }

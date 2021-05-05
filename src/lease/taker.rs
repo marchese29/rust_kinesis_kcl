@@ -116,7 +116,7 @@ impl LeaseTaker {
         }
 
         let lease_counts = self.get_lease_counts(expired_leases).await;
-        let mut target_count = 0;
+        let mut target_count;
         {
             let all_leases = self.all_leases.read().await;
             if lease_counts.len() >= all_leases.len() {
