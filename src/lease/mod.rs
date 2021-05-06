@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use dynomite::Item;
 use tokio::sync::RwLock;
 
 mod broker;
@@ -9,8 +10,9 @@ mod taker;
 
 pub(crate) type SharedLease = Arc<RwLock<Lease>>;
 
-#[derive(Debug, PartialEq, Eq, Hash, Clone)]
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Item)]
 pub(crate) struct Lease {
+    #[dynomite(partition_key)]
     pub(crate) lease_key: String,
     pub(crate) lease_owner: Option<String>,
     pub(crate) last_renewal_nanos: u64,

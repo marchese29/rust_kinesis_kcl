@@ -5,14 +5,17 @@ use std::{
         atomic::{AtomicU64, Ordering},
         Arc,
     },
-    time::{SystemTime, UNIX_EPOCH},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use async_trait::async_trait;
+use futures_retry::FutureRetry;
 use rand::{seq::SliceRandom, thread_rng};
 use tokio::sync::RwLock;
 
-use crate::util::runnable::PeriodicRunnable;
+use crate::util::{
+    exception::Exception, retry::FixedCountWithDelayStrategy, runnable::PeriodicRunnable,
+};
 
 use super::{broker::LeaseBroker, renewer::LeaseRenewer, SharedLease};
 
@@ -37,7 +40,9 @@ fn current_nano_time() -> u64 {
 
 impl LeaseTaker {
     async fn take_leases(&self) -> Vec<SharedLease> {
-        self.update_leases_from_source().await;
+        if let Err((_ex, _)) = self.update_leases_from_source().await {
+            todo!("Print an error somewhere")
+        }
 
         let mut expired_leases = Vec::new();
         {
@@ -68,8 +73,12 @@ impl LeaseTaker {
         taken_leases
     }
 
-    async fn update_leases_from_source(&self) {
-        let source_leases = self.lease_broker.list_all_leases().await;
+    async fn update_leases_from_source(&self) -> Result<(), (Exception, usize)> {
+        let (source_leases, _) = FutureRetry::new(
+            move || self.lease_broker.list_all_leases(),
+            FixedCountWithDelayStrategy::new(3, Duration::from_millis(100)),
+        )
+        .await?;
         self.last_scan_time
             .store(current_nano_time(), Ordering::SeqCst);
 
@@ -108,6 +117,8 @@ impl LeaseTaker {
         for key in not_updated.iter() {
             all_leases.remove(key);
         }
+
+        Ok(())
     }
 
     async fn find_leases_to_take(&self, expired_leases: &mut Vec<SharedLease>) -> Vec<SharedLease> {
